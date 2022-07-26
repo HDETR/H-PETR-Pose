@@ -27,7 +27,6 @@ class PETRHead(AnchorFreeHead):
         num_classes (int): Number of categories excluding the background.
         in_channels (int): Number of channels in the input feature map.
         num_query (int): Number of query in Transformer.
-        gt_repeat (int): Number of repeat times,
         num_kpt_fcs (int, optional): Number of fully-connected layers used in
             `FFN`, which is then used for the keypoint regression head.
             Default 2.
@@ -60,9 +59,7 @@ class PETRHead(AnchorFreeHead):
     def __init__(self,
                  num_classes,
                  in_channels,
-                 num_queries_one2one=300,
-                 num_queries_one2many=0,
-                 k_one2many=1,
+                 num_query=100,
                  num_kpt_fcs=2,
                  num_keypoints=17,
                  transformer=None,
@@ -98,7 +95,6 @@ class PETRHead(AnchorFreeHead):
         # since it brings inconvenience when the initialization of
         # `AnchorFreeHead` is called.
         super(AnchorFreeHead, self).__init__(init_cfg)
-
         self.bg_cls_weight = 0
         self.sync_cls_avg_factor = sync_cls_avg_factor
         if train_cfg:
@@ -115,9 +111,7 @@ class PETRHead(AnchorFreeHead):
             # DETR sampling=False, so use PseudoSampler
             sampler_cfg = dict(type='mmdet.PseudoSampler')
             self.sampler = build_sampler(sampler_cfg, context=self)
-        self.num_queries_one2one = num_queries_one2one
-        self.num_queries_one2many = num_queries_one2many
-        self.k_one2many = k_one2many
+        self.num_query = num_query
         self.num_classes = num_classes
         self.in_channels = in_channels
         self.num_kpt_fcs = num_kpt_fcs
@@ -184,8 +178,10 @@ class PETRHead(AnchorFreeHead):
                 [fc_cls for _ in range(num_pred)])
             self.kpt_branches = nn.ModuleList(
                 [kpt_branch for _ in range(num_pred)])
-        self.query_embedding = nn.Embedding(self.num_queries_one2one + self.num_queries_one2many,
+
+        self.query_embedding = nn.Embedding(self.num_query,
                                             self.embed_dims * 2)
+
         refine_kpt_branch = []
         for _ in range(self.num_kpt_fcs):
             refine_kpt_branch.append(Linear(self.embed_dims, self.embed_dims))
@@ -258,16 +254,6 @@ class PETRHead(AnchorFreeHead):
                 self.positional_encoding(mlvl_masks[-1]))
 
         query_embeds = self.query_embedding.weight
-
-        # attn mask
-        self_attn_mask = (
-            torch.zeros([self.num_queries_one2one + self.num_queries_one2many, 
-                         self.num_queries_one2one + self.num_queries_one2many,]).bool().to(feat.device)
-        )
-        self_attn_mask[self.num_queries_one2one :, 0 : self.num_queries_one2one] = True
-        self_attn_mask[0 : self.num_queries_one2one, self.num_queries_one2one :] = True
-
-
         hs, init_reference, inter_references, \
             enc_outputs_class, enc_outputs_kpt, hm_proto, memory = \
                 self.transformer(
@@ -275,11 +261,10 @@ class PETRHead(AnchorFreeHead):
                     mlvl_masks,
                     query_embeds,
                     mlvl_positional_encodings,
-                    decoder_self_attn_mask=[self_attn_mask, None],
                     kpt_branches=self.kpt_branches \
                         if self.with_kpt_refine else None,  # noqa:E501
                     cls_branches=self.cls_branches \
-                        if self.as_two_stage else None , # noqa:E501
+                        if self.as_two_stage else None  # noqa:E501
             )
         hs = hs.permute(0, 2, 1, 3)
         outputs_classes = []
@@ -302,12 +287,6 @@ class PETRHead(AnchorFreeHead):
         outputs_classes = torch.stack(outputs_classes)
         outputs_kpts = torch.stack(outputs_kpts)
 
-        outputs_classes_ori = outputs_classes[:, :, 0 : self.num_queries_one2one, :]
-        outputs_kpts_ori = outputs_kpts[:, :, 0 : self.num_queries_one2one, :]
-        outputs_classes_multi = outputs_classes[:, :, self.num_queries_one2one :, :]
-        outputs_kpts_multi = outputs_kpts[:, :, self.num_queries_one2one :, :]
-
-
         if hm_proto is not None:
             # get heatmap prediction (training phase)
             hm_memory, hm_mask = hm_proto
@@ -315,13 +294,11 @@ class PETRHead(AnchorFreeHead):
             hm_proto = (hm_pred.permute(0, 3, 1, 2), hm_mask)
 
         if self.as_two_stage:
-            return outputs_classes_ori, outputs_kpts_ori, \
-                outputs_classes_multi, outputs_kpts_multi,\
+            return outputs_classes, outputs_kpts, \
                 enc_outputs_class, enc_outputs_kpt.sigmoid(), \
                 hm_proto, memory, mlvl_masks
         else:
-            return outputs_classes_ori, outputs_kpts_ori, \
-                outputs_classes_multi, outputs_kpts_multi,\
+            return outputs_classes, outputs_coords, outputs_kpts, \
                 None, None, None, hm_proto
 
     def forward_refine(self, memory, mlvl_masks, refine_targets, losses,
@@ -345,7 +322,7 @@ class PETRHead(AnchorFreeHead):
             pos_img_inds = kpt_preds.new_zeros([1], dtype=torch.int64)
         else:
             pos_kpt_preds = kpt_preds[pos_inds]
-            pos_img_inds = (pos_inds.nonzero() / (self.num_queries_one2one + self.num_queries_one2many)).squeeze(1).to(
+            pos_img_inds = (pos_inds.nonzero() / self.num_query).squeeze(1).to(
                 torch.int64)
         hs, init_reference, inter_references = self.transformer.forward_refine(
             mlvl_masks,
@@ -370,10 +347,8 @@ class PETRHead(AnchorFreeHead):
             outputs_kpts.append(outputs_kpt)
         outputs_kpts = torch.stack(outputs_kpts)
 
-        
-
         if not self.training:
-            return outputs_kpts[:, :, 0 : self.num_queries_one2one, :]
+            return outputs_kpts
 
         batch_size = mlvl_masks[0].size(0)
         factors = []
@@ -381,7 +356,7 @@ class PETRHead(AnchorFreeHead):
             img_h, img_w, _ = img_metas[img_id]['img_shape']
             factor = mlvl_masks[0].new_tensor(
                 [img_w, img_h, img_w, img_h],
-                dtype=torch.float32).unsqueeze(0).repeat(self.num_aug_query, 1)
+                dtype=torch.float32).unsqueeze(0).repeat(self.num_query, 1)
             factors.append(factor)
         factors = torch.cat(factors, 0)
         factors = factors[pos_inds][:, :2].repeat(1, kpt_preds.shape[-1] // 2)
@@ -476,8 +451,6 @@ class PETRHead(AnchorFreeHead):
     def loss(self,
              all_cls_scores,
              all_kpt_preds,
-             multi_cls_scores,
-             multi_kpt_preds,
              enc_cls_scores,
              enc_kpt_preds,
              enc_hm_proto,
@@ -525,46 +498,18 @@ class PETRHead(AnchorFreeHead):
             f'for gt_bboxes_ignore setting to None.'
 
         num_dec_layers = len(all_cls_scores)
-        # for ori
         all_gt_labels_list = [gt_labels_list for _ in range(num_dec_layers)]
         all_gt_keypoints_list = [
             gt_keypoints_list for _ in range(num_dec_layers)
         ]
         all_gt_areas_list = [gt_areas_list for _ in range(num_dec_layers)]
         img_metas_list = [img_metas for _ in range(num_dec_layers)]
-        
-        # ori losses
+
         losses_cls, losses_kpt, losses_oks, kpt_preds_list, kpt_targets_list, \
             area_targets_list, kpt_weights_list = multi_apply(
                 self.loss_single, all_cls_scores, all_kpt_preds,
                 all_gt_labels_list, all_gt_keypoints_list,
                 all_gt_areas_list, img_metas_list)
-
-        # multi losses
-        if self.k_one2many > 0:
-            # for multi
-            multi_gt_keypoints_list = []
-            multi_gt_labels_list = []
-            multi_gt_areas_list = []
-            
-            for gt_keypoints in gt_keypoints_list:
-                multi_gt_keypoints_list.append(gt_keypoints.repeat(self.gt_repeat, 1))
-
-            for gt_labels in gt_labels_list:
-                multi_gt_labels_list.append(gt_labels.repeat(self.gt_repeat))
-
-            for gt_areas in gt_areas_list:
-                multi_gt_areas_list.append(gt_areas.repeat(self.gt_repeat))
-
-            all_multi_gt_keypoints_list = [multi_gt_keypoints_list for _ in range(num_dec_layers)]
-            all_multi_gt_labels_list = [multi_gt_labels_list for _ in range(num_dec_layers)]
-            all_multi_gt_areas_list = [multi_gt_areas_list for _ in range(num_dec_layers)]
-            
-            losses_cls_multi, losses_kpt_multi, losses_oks_multi, kpt_preds_list_multi, kpt_targets_list_multi, \
-                area_targets_list_multi, kpt_weights_list_multi = multi_apply(
-                    self.loss_single, multi_cls_scores, multi_kpt_preds,
-                    all_multi_gt_labels_list, all_multi_gt_keypoints_list,
-                    all_multi_gt_areas_list, img_metas_list)
 
         loss_dict = dict()
         # loss of proposal generated from encode feature map.
@@ -581,29 +526,16 @@ class PETRHead(AnchorFreeHead):
             loss_dict['enc_loss_kpt'] = enc_losses_kpt
 
         # loss from the last decoder layer
-        loss_dict['loss_cls'] = losses_cls[-1] + (losses_cls_multi[-1] if self.k_one2many > 0 else 0)
-        loss_dict['loss_kpt'] = losses_kpt[-1] + (losses_kpt_multi[-1] if self.k_one2many > 0 else 0)
-        loss_dict['loss_oks'] = losses_oks[-1] + (losses_oks_multi[-1] if self.k_one2many > 0 else 0)
-        
+        loss_dict['loss_cls'] = losses_cls[-1]
+        loss_dict['loss_kpt'] = losses_kpt[-1]
+        loss_dict['loss_oks'] = losses_oks[-1]
         # loss from other decoder layers
         num_dec_layer = 0
-
-        if not self.k_one2many > 0:
-            losses_cls_multi = losses_cls
-            losses_kpt_multi = losses_kpt
-            losses_oks_multi = losses_oks
-
-        for ( loss_cls_i,
-            loss_kpt_i,
-            loss_oks_i,
-            loss_cls_i_multi,
-            loss_kpt_i_multi,
-            loss_oks_i_multi) in zip(
-                losses_cls[:-1], losses_kpt[:-1], losses_oks[:-1],
-                losses_cls_multi[:-1], losses_kpt_multi[:-1], losses_oks_multi[:-1] ):
-            loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i + (loss_cls_i_multi if self.k_one2many > 0 else 0)
-            loss_dict[f'd{num_dec_layer}.loss_kpt'] = loss_kpt_i + (loss_kpt_i_multi if self.k_one2many > 0 else 0)
-            loss_dict[f'd{num_dec_layer}.loss_oks'] = loss_oks_i + (loss_oks_i_multi if self.k_one2many > 0 else 0)
+        for loss_cls_i, loss_kpt_i, loss_oks_i in zip(
+                losses_cls[:-1], losses_kpt[:-1], losses_oks[:-1]):
+            loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i
+            loss_dict[f'd{num_dec_layer}.loss_kpt'] = loss_kpt_i
+            loss_dict[f'd{num_dec_layer}.loss_oks'] = loss_oks_i
             num_dec_layer += 1
 
         # losses of heatmap generated from P3 feature map
@@ -612,17 +544,8 @@ class PETRHead(AnchorFreeHead):
                                     gt_labels_list, gt_bboxes_list)
         loss_dict['loss_hm'] = loss_hm
 
-        if self.k_one2many > 0:
-            return loss_dict, (torch.cat([kpt_preds_list[-1],kpt_preds_list_multi[-1]]), \
-                            torch.cat([kpt_targets_list[-1],kpt_targets_list_multi[-1]]), \
-                            torch.cat([area_targets_list[-1],area_targets_list_multi[-1]]), \
-                            torch.cat([kpt_weights_list[-1],kpt_weights_list_multi[-1]]))
-        else:
-            return loss_dict, (torch.cat([kpt_preds_list[-1],]), \
-                            torch.cat([kpt_targets_list[-1],]), \
-                            torch.cat([area_targets_list[-1],]), \
-                            torch.cat([kpt_weights_list[-1],]))
-
+        return loss_dict, (kpt_preds_list[-1], kpt_targets_list[-1],
+                           area_targets_list[-1], kpt_weights_list[-1])
 
     def loss_heatmap(self, hm_pred, hm_mask, gt_keypoints, gt_labels,
                      gt_bboxes):
@@ -975,8 +898,6 @@ class PETRHead(AnchorFreeHead):
     def get_bboxes(self,
                    all_cls_scores,
                    all_kpt_preds,
-                   multi_cls_scores,
-                   multi_kpt_preds,
                    enc_cls_scores,
                    enc_kpt_preds,
                    hm_proto,

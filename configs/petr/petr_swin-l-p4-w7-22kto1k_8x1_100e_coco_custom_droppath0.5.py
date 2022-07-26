@@ -1,4 +1,4 @@
-_base_ = './petr_r50_16x2_100e_coco.py'
+_base_ = './petr_r50_8x1_100e_coco_custom.py'
 pretrained = 'https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_large_patch4_window7_224_22kto1k.pth'  # noqa
 model = dict(
     backbone=dict(
@@ -13,10 +13,11 @@ model = dict(
         qk_scale=None,
         drop_rate=0.,
         attn_drop_rate=0.,
-        drop_path_rate=0.3,
+        drop_path_rate=0.5,
         patch_norm=True,
         out_indices=(1, 2, 3),
-        with_cp=False,
+        with_cp=True,
+        convert_weights=True,
         init_cfg=dict(type='Pretrained', checkpoint=pretrained)),
     neck=dict(
         in_channels=[384, 768, 1536]))

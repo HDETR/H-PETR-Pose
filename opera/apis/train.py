@@ -45,6 +45,7 @@ def init_random_seed(seed=None, device='cuda'):
         random_num = torch.tensor(seed, dtype=torch.int32, device=device)
     else:
         random_num = torch.tensor(0, dtype=torch.int32, device=device)
+    # torch.cuda.set_device(rank)
     dist.broadcast(random_num, src=0)
     return random_num.item()
 

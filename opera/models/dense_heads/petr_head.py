@@ -27,7 +27,7 @@ class PETRHead(AnchorFreeHead):
         num_classes (int): Number of categories excluding the background.
         in_channels (int): Number of channels in the input feature map.
         num_query (int): Number of query in Transformer.
-        gt_repeat (int): Number of repeat times,
+        k_one2many (int): Number of repeat times,
         num_kpt_fcs (int, optional): Number of fully-connected layers used in
             `FFN`, which is then used for the keypoint regression head.
             Default 2.
@@ -304,8 +304,8 @@ class PETRHead(AnchorFreeHead):
 
         outputs_classes_ori = outputs_classes[:, :, 0 : self.num_queries_one2one, :]
         outputs_kpts_ori = outputs_kpts[:, :, 0 : self.num_queries_one2one, :]
-        outputs_classes_multi = outputs_classes[:, :, self.num_queries_one2one :, :]
-        outputs_kpts_multi = outputs_kpts[:, :, self.num_queries_one2one :, :]
+        outputs_classes_one2many = outputs_classes[:, :, self.num_queries_one2one :, :]
+        outputs_kpts_one2many = outputs_kpts[:, :, self.num_queries_one2one :, :]
 
 
         if hm_proto is not None:
@@ -316,12 +316,12 @@ class PETRHead(AnchorFreeHead):
 
         if self.as_two_stage:
             return outputs_classes_ori, outputs_kpts_ori, \
-                outputs_classes_multi, outputs_kpts_multi,\
+                outputs_classes_one2many, outputs_kpts_one2many,\
                 enc_outputs_class, enc_outputs_kpt.sigmoid(), \
                 hm_proto, memory, mlvl_masks
         else:
             return outputs_classes_ori, outputs_kpts_ori, \
-                outputs_classes_multi, outputs_kpts_multi,\
+                outputs_classes_one2many, outputs_kpts_one2many,\
                 None, None, None, hm_proto
 
     def forward_refine(self, memory, mlvl_masks, refine_targets, losses,
@@ -476,8 +476,8 @@ class PETRHead(AnchorFreeHead):
     def loss(self,
              all_cls_scores,
              all_kpt_preds,
-             multi_cls_scores,
-             multi_kpt_preds,
+             one2many_cls_scores,
+             one2many_kpt_preds,
              enc_cls_scores,
              enc_kpt_preds,
              enc_hm_proto,
@@ -540,31 +540,31 @@ class PETRHead(AnchorFreeHead):
                 all_gt_labels_list, all_gt_keypoints_list,
                 all_gt_areas_list, img_metas_list)
 
-        # multi losses
+        # one2many losses
         if self.k_one2many > 0:
-            # for multi
-            multi_gt_keypoints_list = []
-            multi_gt_labels_list = []
-            multi_gt_areas_list = []
+            # for one2many
+            one2many_gt_keypoints_list = []
+            one2many_gt_labels_list = []
+            one2many_gt_areas_list = []
             
             for gt_keypoints in gt_keypoints_list:
-                multi_gt_keypoints_list.append(gt_keypoints.repeat(self.gt_repeat, 1))
+                one2many_gt_keypoints_list.append(gt_keypoints.repeat(self.k_one2many, 1))
 
             for gt_labels in gt_labels_list:
-                multi_gt_labels_list.append(gt_labels.repeat(self.gt_repeat))
+                one2many_gt_labels_list.append(gt_labels.repeat(self.k_one2many))
 
             for gt_areas in gt_areas_list:
-                multi_gt_areas_list.append(gt_areas.repeat(self.gt_repeat))
+                one2many_gt_areas_list.append(gt_areas.repeat(self.k_one2many))
 
-            all_multi_gt_keypoints_list = [multi_gt_keypoints_list for _ in range(num_dec_layers)]
-            all_multi_gt_labels_list = [multi_gt_labels_list for _ in range(num_dec_layers)]
-            all_multi_gt_areas_list = [multi_gt_areas_list for _ in range(num_dec_layers)]
-            
-            losses_cls_multi, losses_kpt_multi, losses_oks_multi, kpt_preds_list_multi, kpt_targets_list_multi, \
-                area_targets_list_multi, kpt_weights_list_multi = multi_apply(
-                    self.loss_single, multi_cls_scores, multi_kpt_preds,
-                    all_multi_gt_labels_list, all_multi_gt_keypoints_list,
-                    all_multi_gt_areas_list, img_metas_list)
+            all_one2many_gt_keypoints_list = [one2many_gt_keypoints_list for _ in range(num_dec_layers)]
+            all_one2many_gt_labels_list = [one2many_gt_labels_list for _ in range(num_dec_layers)]
+            all_one2many_gt_areas_list = [one2many_gt_areas_list for _ in range(num_dec_layers)]
+
+            losses_cls_one2many, losses_kpt_one2many, losses_oks_one2many, kpt_preds_list_one2many, kpt_targets_list_one2many, \
+                area_targets_list_one2many, kpt_weights_list_one2many = multi_apply(
+                    self.loss_single, one2many_cls_scores, one2many_kpt_preds,
+                    all_one2many_gt_labels_list, all_one2many_gt_keypoints_list,
+                    all_one2many_gt_areas_list, img_metas_list)
 
         loss_dict = dict()
         # loss of proposal generated from encode feature map.
@@ -581,29 +581,29 @@ class PETRHead(AnchorFreeHead):
             loss_dict['enc_loss_kpt'] = enc_losses_kpt
 
         # loss from the last decoder layer
-        loss_dict['loss_cls'] = losses_cls[-1] + (losses_cls_multi[-1] if self.k_one2many > 0 else 0)
-        loss_dict['loss_kpt'] = losses_kpt[-1] + (losses_kpt_multi[-1] if self.k_one2many > 0 else 0)
-        loss_dict['loss_oks'] = losses_oks[-1] + (losses_oks_multi[-1] if self.k_one2many > 0 else 0)
+        loss_dict['loss_cls'] = losses_cls[-1] + (losses_cls_one2many[-1] if self.k_one2many > 0 else 0)
+        loss_dict['loss_kpt'] = losses_kpt[-1] + (losses_kpt_one2many[-1] if self.k_one2many > 0 else 0)
+        loss_dict['loss_oks'] = losses_oks[-1] + (losses_oks_one2many[-1] if self.k_one2many > 0 else 0)
         
         # loss from other decoder layers
         num_dec_layer = 0
 
         if not self.k_one2many > 0:
-            losses_cls_multi = losses_cls
-            losses_kpt_multi = losses_kpt
-            losses_oks_multi = losses_oks
+            losses_cls_one2many = losses_cls
+            losses_kpt_one2many = losses_kpt
+            losses_oks_one2many = losses_oks
 
         for ( loss_cls_i,
             loss_kpt_i,
             loss_oks_i,
-            loss_cls_i_multi,
-            loss_kpt_i_multi,
-            loss_oks_i_multi) in zip(
+            loss_cls_i_one2many,
+            loss_kpt_i_one2many,
+            loss_oks_i_one2many) in zip(
                 losses_cls[:-1], losses_kpt[:-1], losses_oks[:-1],
-                losses_cls_multi[:-1], losses_kpt_multi[:-1], losses_oks_multi[:-1] ):
-            loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i + (loss_cls_i_multi if self.k_one2many > 0 else 0)
-            loss_dict[f'd{num_dec_layer}.loss_kpt'] = loss_kpt_i + (loss_kpt_i_multi if self.k_one2many > 0 else 0)
-            loss_dict[f'd{num_dec_layer}.loss_oks'] = loss_oks_i + (loss_oks_i_multi if self.k_one2many > 0 else 0)
+                losses_cls_one2many[:-1], losses_kpt_one2many[:-1], losses_oks_one2many[:-1] ):
+            loss_dict[f'd{num_dec_layer}.loss_cls'] = loss_cls_i + (loss_cls_i_one2many if self.k_one2many > 0 else 0)
+            loss_dict[f'd{num_dec_layer}.loss_kpt'] = loss_kpt_i + (loss_kpt_i_one2many if self.k_one2many > 0 else 0)
+            loss_dict[f'd{num_dec_layer}.loss_oks'] = loss_oks_i + (loss_oks_i_one2many if self.k_one2many > 0 else 0)
             num_dec_layer += 1
 
         # losses of heatmap generated from P3 feature map
@@ -613,10 +613,10 @@ class PETRHead(AnchorFreeHead):
         loss_dict['loss_hm'] = loss_hm
 
         if self.k_one2many > 0:
-            return loss_dict, (torch.cat([kpt_preds_list[-1],kpt_preds_list_multi[-1]]), \
-                            torch.cat([kpt_targets_list[-1],kpt_targets_list_multi[-1]]), \
-                            torch.cat([area_targets_list[-1],area_targets_list_multi[-1]]), \
-                            torch.cat([kpt_weights_list[-1],kpt_weights_list_multi[-1]]))
+            return loss_dict, (torch.cat([kpt_preds_list[-1],kpt_preds_list_one2many[-1]]), \
+                            torch.cat([kpt_targets_list[-1],kpt_targets_list_one2many[-1]]), \
+                            torch.cat([area_targets_list[-1],area_targets_list_one2many[-1]]), \
+                            torch.cat([kpt_weights_list[-1],kpt_weights_list_one2many[-1]]))
         else:
             return loss_dict, (torch.cat([kpt_preds_list[-1],]), \
                             torch.cat([kpt_targets_list[-1],]), \
@@ -975,8 +975,8 @@ class PETRHead(AnchorFreeHead):
     def get_bboxes(self,
                    all_cls_scores,
                    all_kpt_preds,
-                   multi_cls_scores,
-                   multi_kpt_preds,
+                   one2many_cls_scores,
+                   one2many_kpt_preds,
                    enc_cls_scores,
                    enc_kpt_preds,
                    hm_proto,

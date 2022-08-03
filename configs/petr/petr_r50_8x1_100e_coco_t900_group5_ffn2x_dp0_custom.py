@@ -33,7 +33,7 @@ model = dict(
         as_two_stage=True,
         transformer=dict(
             type="opera.PETRTransformer",
-            two_stage_num_proposals=300,
+            two_stage_num_proposals=1200,
             encoder=dict(
                 type="mmcv.DetrTransformerEncoder",
                 num_layers=6,
@@ -42,7 +42,7 @@ model = dict(
                     attn_cfgs=dict(
                         type="mmcv.MultiScaleDeformableAttention", embed_dims=256
                     ),
-                    feedforward_channels=2048,
+                    feedforward_channels=1024,
                     ffn_dropout=0.0,
                     operation_order=("self_attn", "norm", "ffn", "norm"),
                 ),
@@ -87,7 +87,7 @@ model = dict(
                         embed_dims=256,
                         num_levels=1,
                     ),
-                    feedforward_channels=2048,
+                    feedforward_channels=1024,
                     ffn_dropout=0.0,
                     operation_order=("self_attn", "norm", "ffn", "norm"),
                 ),

@@ -1,3 +1,8 @@
+# ------------------------------------------------------------------------
+# H-DETR
+# Copyright (c) 2022 Peking University & Microsoft Research Asia. All Rights Reserved.
+# Licensed under the MIT-style license found in the LICENSE file in the root directory
+# ------------------------------------------------------------------------
 # Copyright (c) Hikvision Research Institute. All rights reserved.
 import math
 

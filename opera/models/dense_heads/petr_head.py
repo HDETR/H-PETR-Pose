@@ -1,3 +1,8 @@
+# ------------------------------------------------------------------------
+# H-DETR
+# Copyright (c) 2022 Peking University & Microsoft Research Asia. All Rights Reserved.
+# Licensed under the MIT-style license found in the LICENSE file in the root directory
+# ------------------------------------------------------------------------
 # Copyright (c) Hikvision Research Institute. All rights reserved.
 import copy
 import numpy as np
@@ -381,7 +386,7 @@ class PETRHead(AnchorFreeHead):
             img_h, img_w, _ = img_metas[img_id]['img_shape']
             factor = mlvl_masks[0].new_tensor(
                 [img_w, img_h, img_w, img_h],
-                dtype=torch.float32).unsqueeze(0).repeat(self.num_aug_query, 1)
+                dtype=torch.float32).unsqueeze(0).repeat(self.num_queries_one2one +  self.num_queries_one2many, 1)
             factors.append(factor)
         factors = torch.cat(factors, 0)
         factors = factors[pos_inds][:, :2].repeat(1, kpt_preds.shape[-1] // 2)
@@ -1067,7 +1072,7 @@ class PETRHead(AnchorFreeHead):
                 - det_kpts: Predicted keypoints with shape [num_query, K, 3].
         """
         assert len(cls_score) == len(kpt_pred)
-        max_per_img = self.test_cfg.get('max_per_img', self.num_query)
+        max_per_img = self.test_cfg.get('max_per_img', self.num_queries_one2one + self.num_queries_one2many)
         # exclude background
         if self.loss_cls.use_sigmoid:
             cls_score = cls_score.sigmoid()

@@ -31,40 +31,40 @@ We provide a set of baseline results and trained models available for download:
 <td align="center">R50</td>
 <td align="center">100</td>
 <td align="center">69.3 / 68.8</td>
-<td align="center"><a href="TO ADD">model</a></td>
+<td align="center"><a href="https://github.com/HDETR/H-PETR-Pose/releases/download/v1.0.0/r50_baseline.pth">model</a></td>
  <tr><td align="left"><a href="HDETR_opera/configs/petr/petr_r101_8x1_100e_coco_custom.py">Deformable-DETR</a></td>
 <td align="center">R101</td>
 <td align="center">100</td>
 <td align="center">69.9 / 70.0</td>
-<td align="center"><a href="TO ADD">model</a></td>
+<td align="center"><a href="https://github.com/HDETR/H-PETR-Pose/releases/download/v1.0.0/r101_baseline.pth">model</a></td>
 </tr>
 </tr>
  <tr><td align="left"><a href="configs/petr/petr_swin-l-p4-w7-22kto1k_8x1_100e_coco_custom_droppath0.5.py">Deformable-DETR</a></td>
 <td align="center">Swin Large</td>
 <td align="center">100</td>
 <td align="center">73.3 / 73.1</td>
-<td align="center"><a href="TO ADD">model</a></td>
+<td align="center"><a href="https://github.com/HDETR/H-PETR-Pose/releases/download/v1.0.0/swinL_baseline.pth">model</a></td>
 </tr>
 </tr>
  <tr><td align="left"><a href="configs/petr/petr_r50_8x1_100e_coco_t900_group5_ffn2x_dp0_custom.py">H-Deformable-DETR</a></td>
 <td align="center">R50</td>
 <td align="center">100</td>
 <td align="center">70.9</td>
-<td align="center"><a href="TO ADD">model</a></td>
+<td align="center"><a href="https://github.com/HDETR/H-PETR-Pose/releases/download/v1.0.0/r50_H-PETR.pth">model</a></td>
 </tr>
 </tr>
  <tr><td align="left"><a href="configs/petr/petr_r101_8x1_100e_coco_t900_group5_ffn2x_dp0_custom.py">H-Deformable-DETR</a></td>
 <td align="center">R101</td>
 <td align="center">100</td>
 <td align="center">71.0</td>
-<td align="center"><a href="TO ADD">model</a></td>
+<td align="center"><a href="https://github.com/HDETR/H-PETR-Pose/releases/download/v1.0.0/r101_H-PETR.pth">model</a></td>
 </tr>
 </tr>
  <tr><td align="left"><a href="configs/petr/petr_swin-l-p4-w7-22kto1k_8x1_100e_coco_t900_group5_ffn2x_dp0_custom_droppath0.5.py">H-Deformable-DETR</a></td>
 <td align="center">Swin Large</td>
 <td align="center">100</td>
 <td align="center">74.9</td>
-<td align="center"><a href="TO ADD">model</a></td>
+<td align="center"><a href="https://github.com/HDETR/H-PETR-Pose/releases/download/v1.0.0/swinL_H-PETR.pth">model</a></td>
 </tr>
 </tbody></table>
 

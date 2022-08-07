@@ -13,6 +13,14 @@ If you find H-PETR-Pose useful in your research, please consider citing:
   journal={arXiv preprint arXiv:2207.13080},
   year={2022}
 }
+
+@inproceedings{shi2022end,
+  title={End-to-End Multi-Person Pose Estimation With Transformers},
+  author={Shi, Dahu and Wei, Xing and Li, Liangqi and Ren, Ye and Tan, Wenming},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={11069--11078},
+  year={2022}
+}
 ```
 ## Model ZOO
 

@@ -92,7 +92,7 @@ bash ./tools/dist_test.sh  <config_path> <checkpoint_path> 8 --eval keypoints
 
 ## Modified files compared to Opera
 
-### To support Hybird-branch
+### To support Hybrid-branch
 * opera/models/dense_heads/petr_head.py
 * opera/models/dense_heads/\_\_init\_\_.py
 
